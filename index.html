@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5f5f7">
+<title>Frame Extractor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  button, input, kbd { font-family: inherit; }
+  body {
+    margin: 0;
+    font-family: "DM Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f7;
+    color: #1a1a1a;
+    min-height: 100vh;
+    padding: 20px;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    h1 { font-size: 18px; margin-bottom: 12px; }
+  }
+  h1 {
+    margin: 0 0 20px;
+    font-weight: 500;
+    font-size: 22px;
+    text-align: center;
+    color: #1a1a1a;
+  }
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .drop-zone {
+    border: 2px dashed #c5c5c8;
+    border-radius: 8px;
+    padding: 60px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: #ffffff;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: #2563eb;
+    background: #f0f6ff;
+  }
+  .drop-zone p { margin: 0; color: #444; }
+  .drop-zone .small { font-size: 13px; margin-top: 8px; color: #888; }
+  @media (max-width: 600px) {
+    .drop-zone { padding: 40px 16px; }
+    .drop-zone .desktop-only { display: none; }
+  }
+  @media (min-width: 601px) {
+    .drop-zone .mobile-only { display: none; }
+  }
+  input[type="file"] { display: none; }
+
+  .player { display: none; }
+  .player.active { display: block; }
+
+  .video-wrap {
+    position: relative;
+    line-height: 0;
+  }
+  video {
+    width: 100%;
+    max-height: 65vh;
+    background: #000;
+    border-radius: 8px;
+    display: block;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: none;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .grid-overlay.active { display: block; }
+  .crop-frame {
+    position: absolute;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+    outline: 1px solid rgba(255, 255, 255, 0.7);
+  }
+  .crop-frame.no-mask {
+    box-shadow: none;
+  }
+  .crop-frame .line {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.75);
+    box-shadow: 0 0 2px rgba(0, 0, 0, 0.7);
+  }
+  .crop-frame .v1 { top: 0; bottom: 0; left: 33.3333%; width: 1px; }
+  .crop-frame .v2 { top: 0; bottom: 0; left: 66.6666%; width: 1px; }
+  .crop-frame .h1 { left: 0; right: 0; top: 33.3333%; height: 1px; }
+  .crop-frame .h2 { left: 0; right: 0; top: 66.6666%; height: 1px; }
+  .format-select {
+    padding: 9px 10px;
+    background: #ffffff;
+    border: 1px solid #d0d0d4;
+    border-radius: 6px;
+    color: #1a1a1a;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.toggle.active {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+  }
+
+  .timeline-wrap {
+    margin: 16px 0 8px;
+  }
+  .timeline {
+    width: 100%;
+    height: 10px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #e0e0e3;
+    border-radius: 5px;
+    outline: none;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .timeline::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    background: #2563eb;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+  .timeline::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    background: #2563eb;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+
+  .time-info {
+    display: flex;
+    justify-content: space-between;
+    font-family: monospace;
+    font-size: 13px;
+    color: #555;
+    margin-bottom: 16px;
+  }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    background: #ffffff;
+    border: 1px solid #e5e5e8;
+    border-radius: 8px;
+  }
+  button {
+    background: #ffffff;
+    color: #1a1a1a;
+    border: 1px solid #d0d0d4;
+    padding: 12px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.1s, border-color 0.1s;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  button:hover { background: #f5f5f7; border-color: #b8b8bc; }
+  button:active { background: #e8e8eb; }
+  button.primary {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+  }
+  button.primary:hover { background: #1d4ed8; border-color: #1d4ed8; }
+  button.danger {
+    background: #ffffff;
+    color: #999;
+  }
+
+  .fps-input {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #555;
+    font-size: 13px;
+  }
+  .fps-input input {
+    width: 64px;
+    padding: 10px 8px;
+    background: #ffffff;
+    border: 1px solid #d0d0d4;
+    border-radius: 6px;
+    color: #1a1a1a;
+    font-size: 14px;
+  }
+  .format-select {
+    min-height: 44px;
+  }
+  @media (max-width: 600px) {
+    .controls { padding: 8px; gap: 6px; }
+    button { padding: 10px 12px; font-size: 13px; }
+    .format-select { font-size: 13px; padding: 8px; }
+    .time-info { font-size: 11px; gap: 6px; flex-wrap: wrap; justify-content: center; }
+    .time-info span { white-space: nowrap; }
+  }
+
+  .hint {
+    text-align: center;
+    color: #888;
+    font-size: 12px;
+    margin-top: 12px;
+  }
+  @media (max-width: 600px) {
+    .hint { display: none; }
+  }
+  kbd {
+    background: #f5f5f7;
+    border: 1px solid #d0d0d4;
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #444;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Frame Extractor</h1>
+
+  <div id="dropZone" class="drop-zone">
+    <p class="desktop-only"><strong>Klikni</strong> pro výběr videa nebo sem soubor přetáhni</p>
+    <p class="mobile-only"><strong>Klepni pro výběr videa</strong></p>
+    <p class="small">Podporováno: MP4, WebM, MOV, MKV, AVI a další (záleží na prohlížeči — doporučujeme Chrome nebo Edge)</p>
+    <input type="file" id="fileInput" accept="video/*">
+  </div>
+
+  <div id="player" class="player">
+    <div class="video-wrap">
+      <video id="video" preload="auto" muted controls playsinline webkit-playsinline></video>
+      <div id="gridOverlay" class="grid-overlay">
+        <div id="cropFrame" class="crop-frame no-mask">
+          <div class="line v1"></div>
+          <div class="line v2"></div>
+          <div class="line h1"></div>
+          <div class="line h2"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="timeline-wrap">
+      <input type="range" id="timeline" class="timeline" min="0" max="1000" value="0" step="1">
+    </div>
+    <div class="time-info">
+      <span id="timeCurrent">00:00.000</span>
+      <span id="frameInfo">Frame: 0</span>
+      <span id="timeTotal">00:00.000</span>
+    </div>
+
+    <div class="controls">
+      <button id="btnPrevFrame" title="Předchozí snímek (←)">⏮ Frame</button>
+      <button id="btnPlay" class="primary" title="Přehrát/Pozastavit (mezerník)">▶ Play</button>
+      <button id="btnNextFrame" title="Další snímek (→)">Frame ⏭</button>
+      <button id="btnExport" class="primary" title="Exportovat aktuální snímek (E)">💾 Export snímku</button>
+      <button id="btnGrid" class="toggle" title="Pravidlo třetin (G)">⊞ Mřížka</button>
+      <select id="formatSelect" class="format-select" title="Poměr stran pro mřížku">
+        <option value="full">Plné video</option>
+        <option value="16:9">16:9 (širokoúhlé)</option>
+        <option value="9:16">9:16 (vertikální)</option>
+        <option value="1:1">1:1 (čtverec)</option>
+        <option value="4:5">4:5 (Instagram)</option>
+        <option value="4:3">4:3</option>
+        <option value="3:2">3:2</option>
+        <option value="2.35:1">2.35:1 (cinema)</option>
+        <option value="2.39:1">2.39:1 (anamorf)</option>
+      </select>
+      <button id="btnReset" class="danger" title="Načíst jiné video">✕ Zavřít</button>
+      <div class="fps-input">
+        FPS:
+        <input type="number" id="fpsInput" value="30" min="1" max="240" step="1">
+      </div>
+    </div>
+
+    <div class="hint">
+      Klávesy: <kbd>Mezerník</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> krokování · <kbd>E</kbd> export · <kbd>G</kbd> mřížka
+    </div>
+  </div>
+</div>
+
+<canvas id="canvas" style="display:none;"></canvas>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const player = document.getElementById('player');
+const video = document.getElementById('video');
+const timeline = document.getElementById('timeline');
+const timeCurrent = document.getElementById('timeCurrent');
+const timeTotal = document.getElementById('timeTotal');
+const frameInfo = document.getElementById('frameInfo');
+const fpsInput = document.getElementById('fpsInput');
+const canvas = document.getElementById('canvas');
+const btnPlay = document.getElementById('btnPlay');
+const btnPrevFrame = document.getElementById('btnPrevFrame');
+const btnNextFrame = document.getElementById('btnNextFrame');
+const btnExport = document.getElementById('btnExport');
+const btnReset = document.getElementById('btnReset');
+const btnGrid = document.getElementById('btnGrid');
+const gridOverlay = document.getElementById('gridOverlay');
+const cropFrame = document.getElementById('cropFrame');
+const formatSelect = document.getElementById('formatSelect');
+
+btnGrid.addEventListener('click', () => {
+  gridOverlay.classList.toggle('active');
+  btnGrid.classList.toggle('active');
+});
+
+function parseRatio(value) {
+  if (value === 'full') return null;
+  const [a, b] = value.split(':').map(parseFloat);
+  if (!a || !b) return null;
+  return a / b;
+}
+
+function updateCropFrame() {
+  const elW = video.offsetWidth;
+  const elH = video.offsetHeight;
+  if (!elW || !elH) return;
+  const vW = video.videoWidth || elW;
+  const vH = video.videoHeight || elH;
+  const videoRatio = vW / vH;
+  const elRatio = elW / elH;
+
+  let visW, visH, visX, visY;
+  if (videoRatio > elRatio) {
+    visW = elW;
+    visH = elW / videoRatio;
+    visX = 0;
+    visY = (elH - visH) / 2;
+  } else {
+    visH = elH;
+    visW = elH * videoRatio;
+    visX = (elW - visW) / 2;
+    visY = 0;
+  }
+
+  const targetRatio = parseRatio(formatSelect.value);
+  let cropW, cropH;
+  if (targetRatio === null) {
+    cropW = visW;
+    cropH = visH;
+    cropFrame.classList.add('no-mask');
+  } else {
+    if (targetRatio > visW / visH) {
+      cropW = visW;
+      cropH = visW / targetRatio;
+    } else {
+      cropH = visH;
+      cropW = visH * targetRatio;
+    }
+    cropFrame.classList.remove('no-mask');
+  }
+  const cropX = visX + (visW - cropW) / 2;
+  const cropY = visY + (visH - cropH) / 2;
+
+  cropFrame.style.left = cropX + 'px';
+  cropFrame.style.top = cropY + 'px';
+  cropFrame.style.width = cropW + 'px';
+  cropFrame.style.height = cropH + 'px';
+}
+
+formatSelect.addEventListener('change', updateCropFrame);
+window.addEventListener('resize', updateCropFrame);
+if (window.ResizeObserver) {
+  new ResizeObserver(updateCropFrame).observe(video);
+}
+
+let videoName = 'frame';
+let currentBlobUrl = null;
+
+function loadFile(file) {
+  if (!file || !file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|mkv|avi|m4v|ogv|ogg)$/i)) {
+    alert('Vyber prosím video soubor.');
+    return;
+  }
+  if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+  currentBlobUrl = URL.createObjectURL(file);
+  videoName = file.name.replace(/\.[^.]+$/, '');
+  video.src = currentBlobUrl;
+  dropZone.style.display = 'none';
+  player.classList.add('active');
+}
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+['dragenter', 'dragover'].forEach(ev =>
+  dropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  })
+);
+['dragleave', 'drop'].forEach(ev =>
+  dropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+  })
+);
+dropZone.addEventListener('drop', e => {
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+function formatTime(s) {
+  if (!isFinite(s)) return '00:00.000';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  const ms = Math.floor((s % 1) * 1000);
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+}
+
+function updateUI() {
+  const fps = parseFloat(fpsInput.value) || 30;
+  timeCurrent.textContent = formatTime(video.currentTime);
+  timeTotal.textContent = formatTime(video.duration);
+  frameInfo.textContent = `Frame: ${Math.round(video.currentTime * fps)}`;
+  if (video.duration) {
+    timeline.value = (video.currentTime / video.duration) * 1000;
+  }
+}
+
+video.addEventListener('loadedmetadata', () => {
+  timeline.max = 1000;
+  updateUI();
+  updateCropFrame();
+});
+video.addEventListener('timeupdate', updateUI);
+video.addEventListener('seeked', updateUI);
+video.addEventListener('play', () => btnPlay.textContent = '⏸ Pause');
+video.addEventListener('pause', () => btnPlay.textContent = '▶ Play');
+
+timeline.addEventListener('input', () => {
+  if (!video.paused) video.pause();
+  if (video.duration) {
+    video.currentTime = (timeline.value / 1000) * video.duration;
+  }
+});
+
+btnPlay.addEventListener('click', () => {
+  if (video.paused) video.play();
+  else video.pause();
+});
+
+function stepFrame(dir) {
+  video.pause();
+  const fps = parseFloat(fpsInput.value) || 30;
+  const dt = 1 / fps;
+  let t = video.currentTime + dir * dt;
+  if (t < 0) t = 0;
+  if (t > video.duration) t = video.duration;
+  video.currentTime = t;
+}
+
+btnPrevFrame.addEventListener('click', () => stepFrame(-1));
+btnNextFrame.addEventListener('click', () => stepFrame(1));
+
+btnExport.addEventListener('click', exportFrame);
+
+btnReset.addEventListener('click', () => {
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+  currentBlobUrl = null;
+  player.classList.remove('active');
+  dropZone.style.display = 'block';
+  fileInput.value = '';
+});
+
+function exportFrame() {
+  if (!video.videoWidth) return;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fps = parseFloat(fpsInput.value) || 30;
+    const frameNum = Math.round(video.currentTime * fps);
+    a.href = url;
+    a.download = `${videoName}_frame_${String(frameNum).padStart(6, '0')}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, 'image/png');
+}
+
+document.addEventListener('keydown', e => {
+  if (!player.classList.contains('active')) return;
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    btnPlay.click();
+  } else if (e.code === 'ArrowLeft') {
+    e.preventDefault();
+    stepFrame(-1);
+  } else if (e.code === 'ArrowRight') {
+    e.preventDefault();
+    stepFrame(1);
+  } else if (e.key === 'e' || e.key === 'E') {
+    e.preventDefault();
+    exportFrame();
+  } else if (e.key === 'g' || e.key === 'G') {
+    e.preventDefault();
+    btnGrid.click();
+  }
+});
+</script>
+</body>
+</html>
