@@ -619,10 +619,14 @@ async function convertVideo() {
     progressLabel.textContent = 'Převádím… 0%';
     await ff.exec([
       '-i', inputName,
+      '-vf', 'scale=in_color_matrix=bt2020nc:out_color_matrix=bt709:in_range=tv:out_range=tv:flags=full_chroma_int+accurate_rnd,format=yuv420p',
       '-c:v', 'libx264',
       '-crf', '17',
       '-preset', 'ultrafast',
-      '-pix_fmt', 'yuv420p',
+      '-color_primaries', 'bt709',
+      '-color_trc', 'bt709',
+      '-colorspace', 'bt709',
+      '-color_range', 'tv',
       '-c:a', 'aac',
       '-b:a', '192k',
       outputName,
