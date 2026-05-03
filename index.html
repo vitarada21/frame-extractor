@@ -642,8 +642,9 @@ async function convertVideo() {
     try { await ff.deleteFile(inputName); } catch {}
     try { await ff.deleteFile(outputName); } catch {}
   } catch (err) {
-    console.error(err);
-    progressLabel.textContent = 'Chyba: ' + (err.message || 'převod selhal');
+    console.error('Convert error:', err);
+    const detail = err && (err.message || err.toString()) || 'neznámá chyba';
+    progressLabel.textContent = 'Chyba: ' + detail + ' (otevři F12 → Console pro detaily)';
   } finally {
     btnConvert.disabled = false;
   }
