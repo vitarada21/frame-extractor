@@ -584,9 +584,8 @@ async function loadFFmpeg() {
   });
   progressLabel.textContent = 'Načítám knihovnu (~30 MB)…';
   await ff.load({
-    classWorkerURL: 'ffmpeg/814.ffmpeg.js',
-    coreURL: 'ffmpeg/ffmpeg-core.js',
-    wasmURL: 'ffmpeg/ffmpeg-core.wasm',
+    coreURL: new URL('ffmpeg/ffmpeg-core.js', document.baseURI).href,
+    wasmURL: new URL('ffmpeg/ffmpeg-core.wasm', document.baseURI).href,
   });
   ffmpegInstance = ff;
   return ff;
