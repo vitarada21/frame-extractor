@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+<script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 <style>
   * { box-sizing: border-box; }
   button, input, kbd { font-family: inherit; }
@@ -74,6 +76,7 @@
     border-radius: 8px;
     display: block;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    cursor: pointer;
   }
   .grid-overlay {
     position: absolute;
@@ -228,6 +231,65 @@
     font-size: 12px;
     margin-top: 12px;
   }
+  .error-box {
+    margin-top: 12px;
+    padding: 14px 16px;
+    background: #fff5f5;
+    border: 1px solid #f5c2c2;
+    border-radius: 8px;
+    color: #842020;
+    font-size: 14px;
+    line-height: 1.5;
+    display: none;
+  }
+  .error-box.active { display: block; }
+  .error-box strong { display: block; margin-bottom: 4px; }
+  .convert-box {
+    margin-top: 12px;
+    padding: 16px;
+    background: #f0f6ff;
+    border: 1px solid #c7d8ff;
+    border-radius: 8px;
+    display: none;
+  }
+  .convert-box.active { display: block; }
+  .convert-box .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .convert-box .info {
+    flex: 1;
+    min-width: 200px;
+    color: #1e3a8a;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .progress-wrap {
+    margin-top: 12px;
+    display: none;
+  }
+  .progress-wrap.active { display: block; }
+  .progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #d6e4ff;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: #2563eb;
+    width: 0%;
+    transition: width 0.2s;
+  }
+  .progress-label {
+    font-size: 12px;
+    color: #1e3a8a;
+    margin-top: 6px;
+    font-family: monospace;
+  }
   @media (max-width: 600px) {
     .hint { display: none; }
   }
@@ -255,7 +317,7 @@
 
   <div id="player" class="player">
     <div class="video-wrap">
-      <video id="video" preload="auto" muted controls playsinline webkit-playsinline></video>
+      <video id="video" preload="auto" muted playsinline webkit-playsinline></video>
       <div id="gridOverlay" class="grid-overlay">
         <div id="cropFrame" class="crop-frame no-mask">
           <div class="line v1"></div>
@@ -279,6 +341,7 @@
       <button id="btnPrevFrame" title="Předchozí snímek (←)">⏮ Frame</button>
       <button id="btnPlay" class="primary" title="Přehrát/Pozastavit (mezerník)">▶ Play</button>
       <button id="btnNextFrame" title="Další snímek (→)">Frame ⏭</button>
+      <button id="btnMute" class="toggle" title="Zapnout/vypnout zvuk (M)">🔇 Zvuk</button>
       <button id="btnExport" class="primary" title="Exportovat aktuální snímek (E)">💾 Export snímku</button>
       <button id="btnGrid" class="toggle" title="Pravidlo třetin (G)">⊞ Mřížka</button>
       <select id="formatSelect" class="format-select" title="Poměr stran pro mřížku">
@@ -300,7 +363,30 @@
     </div>
 
     <div class="hint">
-      Klávesy: <kbd>Mezerník</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> krokování · <kbd>E</kbd> export · <kbd>G</kbd> mřížka
+      Klávesy: <kbd>Mezerník</kbd> play/pause · <kbd>←</kbd> <kbd>→</kbd> krokování · <kbd>E</kbd> export · <kbd>G</kbd> mřížka · <kbd>M</kbd> zvuk
+    </div>
+
+    <div id="errorBox" class="error-box">
+      <strong>Video se nepodařilo zobrazit.</strong>
+      Nejčastější příčina je nepodporovaný kodek (např. H.265/HEVC z iPhonu) — prohlížeč přečte délku videa, ale neumí dekódovat obraz.
+    </div>
+
+    <div id="convertBox" class="convert-box">
+      <div class="row">
+        <div class="info">
+          <strong>Převést video automaticky?</strong><br>
+          Stáhne se ~30 MB knihovna a video se převede přímo v prohlížeči (nikam se neposílá). Kvalita zůstane prakticky beze ztráty.
+          <br><br>
+          <strong>Doporučujeme ale použít VLC</strong> — je to rychlejší a spolehlivější, hlavně u delších videí. Návod: ve VLC otevři <em>Média → Převést / Uložit</em>, vyber profil <em>„Video - H.264 + MP3 (MP4)"</em>, a hotový soubor nahraj sem.
+          <br><br>
+          <span style="color: #92400e;">⚠ Limit pro převod v prohlížeči je 400 MB. Větší soubory převeď přes VLC.</span>
+        </div>
+        <button id="btnConvert" class="primary">⚙ Převést tady</button>
+      </div>
+      <div id="progressWrap" class="progress-wrap">
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <div id="progressLabel" class="progress-label">Načítám knihovnu…</div>
+      </div>
     </div>
   </div>
 </div>
@@ -323,7 +409,18 @@ const btnPrevFrame = document.getElementById('btnPrevFrame');
 const btnNextFrame = document.getElementById('btnNextFrame');
 const btnExport = document.getElementById('btnExport');
 const btnReset = document.getElementById('btnReset');
+const btnMute = document.getElementById('btnMute');
 const btnGrid = document.getElementById('btnGrid');
+
+function updateMuteButton() {
+  btnMute.textContent = video.muted ? '🔇 Zvuk' : '🔊 Zvuk';
+  btnMute.classList.toggle('active', !video.muted);
+}
+
+btnMute.addEventListener('click', () => {
+  video.muted = !video.muted;
+  updateMuteButton();
+});
 const gridOverlay = document.getElementById('gridOverlay');
 const cropFrame = document.getElementById('cropFrame');
 const formatSelect = document.getElementById('formatSelect');
@@ -395,6 +492,8 @@ if (window.ResizeObserver) {
 
 let videoName = 'frame';
 let currentBlobUrl = null;
+let originalFile = null;
+let ffmpegInstance = null;
 
 function loadFile(file) {
   if (!file || !file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|mkv|avi|m4v|ogv|ogg)$/i)) {
@@ -404,9 +503,13 @@ function loadFile(file) {
   if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
   currentBlobUrl = URL.createObjectURL(file);
   videoName = file.name.replace(/\.[^.]+$/, '');
+  originalFile = file;
   video.src = currentBlobUrl;
   dropZone.style.display = 'none';
   player.classList.add('active');
+  document.getElementById('errorBox').classList.remove('active');
+  document.getElementById('convertBox').classList.remove('active');
+  document.getElementById('progressWrap').classList.remove('active');
 }
 
 dropZone.addEventListener('click', () => fileInput.click());
@@ -448,11 +551,116 @@ function updateUI() {
   }
 }
 
+const errorBox = document.getElementById('errorBox');
+const convertBox = document.getElementById('convertBox');
+const btnConvert = document.getElementById('btnConvert');
+const progressWrap = document.getElementById('progressWrap');
+const progressFill = document.getElementById('progressFill');
+const progressLabel = document.getElementById('progressLabel');
+
+function checkVideoDecodable() {
+  if (!video.videoWidth || !video.videoHeight) {
+    errorBox.classList.add('active');
+    convertBox.classList.add('active');
+  } else {
+    errorBox.classList.remove('active');
+    convertBox.classList.remove('active');
+  }
+}
+
+async function loadFFmpeg() {
+  if (ffmpegInstance) return ffmpegInstance;
+  if (!window.FFmpegWASM || !window.FFmpegUtil) {
+    throw new Error('Knihovna FFmpeg se nenačetla. Zkontroluj připojení k internetu.');
+  }
+  const { FFmpeg } = window.FFmpegWASM;
+  const { toBlobURL } = window.FFmpegUtil;
+  const ff = new FFmpeg();
+  ff.on('log', ({ message }) => console.log('[ffmpeg]', message));
+  ff.on('progress', ({ progress }) => {
+    const pct = Math.min(100, Math.max(0, progress * 100));
+    progressFill.style.width = pct.toFixed(1) + '%';
+    progressLabel.textContent = `Převádím… ${pct.toFixed(0)}%`;
+  });
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+  progressLabel.textContent = 'Načítám knihovnu (~30 MB)…';
+  await ff.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+  });
+  ffmpegInstance = ff;
+  return ff;
+}
+
+const MAX_CONVERT_BYTES = 400 * 1024 * 1024;
+
+async function convertVideo() {
+  if (!originalFile) return;
+  if (originalFile.size > MAX_CONVERT_BYTES) {
+    const sizeMB = (originalFile.size / (1024 * 1024)).toFixed(0);
+    alert(
+      `Soubor má ${sizeMB} MB, což je nad limit 400 MB pro převod v prohlížeči.\n\n` +
+      `Použij prosím VLC:\n` +
+      `Média → Převést / Uložit → vyber profil "Video - H.264 + MP3 (MP4)" → Spustit.\n\n` +
+      `Hotový soubor pak nahraj zpátky sem.`
+    );
+    return;
+  }
+  btnConvert.disabled = true;
+  progressWrap.classList.add('active');
+  progressFill.style.width = '0%';
+  try {
+    const ff = await loadFFmpeg();
+    const { fetchFile } = window.FFmpegUtil;
+    const ext = (originalFile.name.match(/\.([^.]+)$/) || [, 'mov'])[1].toLowerCase();
+    const inputName = 'input.' + ext;
+    const outputName = 'output.mp4';
+    progressLabel.textContent = 'Připravuji soubor…';
+    await ff.writeFile(inputName, await fetchFile(originalFile));
+    progressLabel.textContent = 'Převádím… 0%';
+    await ff.exec([
+      '-i', inputName,
+      '-c:v', 'libx264',
+      '-crf', '17',
+      '-preset', 'ultrafast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      outputName,
+    ]);
+    progressLabel.textContent = 'Hotovo, nahrávám…';
+    const data = await ff.readFile(outputName);
+    const blob = new Blob([data.buffer], { type: 'video/mp4' });
+    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = URL.createObjectURL(blob);
+    video.src = currentBlobUrl;
+    errorBox.classList.remove('active');
+    convertBox.classList.remove('active');
+    progressWrap.classList.remove('active');
+    try { await ff.deleteFile(inputName); } catch {}
+    try { await ff.deleteFile(outputName); } catch {}
+  } catch (err) {
+    console.error(err);
+    progressLabel.textContent = 'Chyba: ' + (err.message || 'převod selhal');
+  } finally {
+    btnConvert.disabled = false;
+  }
+}
+
+btnConvert.addEventListener('click', convertVideo);
+
 video.addEventListener('loadedmetadata', () => {
   timeline.max = 1000;
   updateUI();
   updateCropFrame();
+  if (video.currentTime === 0) {
+    video.currentTime = 0.0001;
+  }
+  setTimeout(checkVideoDecodable, 500);
 });
+
+video.addEventListener('loadeddata', checkVideoDecodable);
+video.addEventListener('error', () => errorBox.classList.add('active'));
 video.addEventListener('timeupdate', updateUI);
 video.addEventListener('seeked', updateUI);
 video.addEventListener('play', () => btnPlay.textContent = '⏸ Pause');
@@ -466,6 +674,11 @@ timeline.addEventListener('input', () => {
 });
 
 btnPlay.addEventListener('click', () => {
+  if (video.paused) video.play();
+  else video.pause();
+});
+
+video.addEventListener('click', () => {
   if (video.paused) video.play();
   else video.pause();
 });
@@ -534,6 +747,9 @@ document.addEventListener('keydown', e => {
   } else if (e.key === 'g' || e.key === 'G') {
     e.preventDefault();
     btnGrid.click();
+  } else if (e.key === 'm' || e.key === 'M') {
+    e.preventDefault();
+    btnMute.click();
   }
 });
 </script>
