@@ -583,8 +583,10 @@ async function loadFFmpeg() {
     progressLabel.textContent = `Převádím… ${pct.toFixed(0)}%`;
   });
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+  const ffmpegBaseURL = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd';
   progressLabel.textContent = 'Načítám knihovnu (~30 MB)…';
   await ff.load({
+    classWorkerURL: await toBlobURL(`${ffmpegBaseURL}/814.ffmpeg.js`, 'text/javascript'),
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
   });
