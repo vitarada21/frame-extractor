@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
-<script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+<script src="ffmpeg/ffmpeg.js"></script>
+<script src="ffmpeg/util.js"></script>
 <style>
   * { box-sizing: border-box; }
   button, input, kbd { font-family: inherit; }
@@ -582,13 +582,11 @@ async function loadFFmpeg() {
     progressFill.style.width = pct.toFixed(1) + '%';
     progressLabel.textContent = `Převádím… ${pct.toFixed(0)}%`;
   });
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-  const ffmpegBaseURL = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd';
   progressLabel.textContent = 'Načítám knihovnu (~30 MB)…';
   await ff.load({
-    classWorkerURL: await toBlobURL(`${ffmpegBaseURL}/814.ffmpeg.js`, 'text/javascript'),
-    coreURL: `${baseURL}/ffmpeg-core.js`,
-    wasmURL: `${baseURL}/ffmpeg-core.wasm`,
+    classWorkerURL: 'ffmpeg/814.ffmpeg.js',
+    coreURL: 'ffmpeg/ffmpeg-core.js',
+    wasmURL: 'ffmpeg/ffmpeg-core.wasm',
   });
   ffmpegInstance = ff;
   return ff;
