@@ -202,7 +202,7 @@ ipcMain.handle('extract-frame', async (event, { inputPath, timeSec, defaultName 
   console.log('[probe]', probeInfo);
   if (mainWindow) mainWindow.webContents.send('probe-info', probeInfo);
 
-  const filterHDR = 'zscale=t=linear,format=gbrpf32le,tonemap=tonemap=mobius:peak=10:desat=0,zscale=t=bt709:m=bt709:p=bt709:r=tv,format=rgb24';
+  const filterHDR = 'zscale=t=bt709:m=bt709:p=bt709:r=tv,format=rgb24,eq=saturation=1.08:contrast=1.05';
   const filterSDR = 'scale=in_color_matrix=auto:out_color_matrix=bt709:flags=full_chroma_int+accurate_rnd,format=rgb24';
 
   const primary = probe.isHDR ? filterHDR : filterSDR;
