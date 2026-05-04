@@ -166,6 +166,21 @@ function runFFmpeg(args) {
   });
 }
 
+function probeVideoIsHDR(inputPath) {
+  return new Promise((resolve) => {
+    const ff = spawn(ffmpegPath, ['-hide_banner', '-i', inputPath]);
+    let stderr = '';
+    ff.stderr.on('data', (d) => { stderr += d.toString(); });
+    ff.on('close', () => {
+      const hlg = /arib-std-b67/i.test(stderr);
+      const pq = /smpte2084/i.test(stderr);
+      const bt2020 = /bt2020(nc|c)?/i.test(stderr);
+      resolve({ isHDR: hlg || pq, hlg, pq, bt2020, stderr });
+    });
+    ff.on('error', () => resolve({ isHDR: false, hlg: false, pq: false, bt2020: false, stderr: '' }));
+  });
+}
+
 ipcMain.handle('extract-frame', async (event, { inputPath, timeSec, defaultName }) => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Uložit snímek',
@@ -182,15 +197,23 @@ ipcMain.handle('extract-frame', async (event, { inputPath, timeSec, defaultName 
     '-y',
   ];
 
-  const filterHDR = 'zscale=t=linear:npl=100,format=gbrpf32le,tonemap=tonemap=hable:desat=0,zscale=p=bt709:t=bt709:m=bt709:r=tv,format=rgb24';
+  const probe = await probeVideoIsHDR(inputPath);
+  console.log('[probe]', { isHDR: probe.isHDR, hlg: probe.hlg, pq: probe.pq, bt2020: probe.bt2020 });
+
+  const filterHDR = 'zscale=t=linear:npl=100,format=gbrpf32le,tonemap=tonemap=mobius:desat=0,zscale=p=bt709:t=bt709:m=bt709:r=tv,format=rgb24';
   const filterSDR = 'scale=in_color_matrix=auto:out_color_matrix=bt709:flags=full_chroma_int+accurate_rnd,format=rgb24';
 
+  const primary = probe.isHDR ? filterHDR : filterSDR;
+  const secondary = probe.isHDR ? filterSDR : filterHDR;
+
   try {
-    await runFFmpeg([...baseArgs, '-vf', filterHDR, result.filePath]);
+    await runFFmpeg([...baseArgs, '-vf', primary, result.filePath]);
   } catch (e1) {
+    console.warn('Primary filter failed, trying secondary:', e1.message);
     try {
-      await runFFmpeg([...baseArgs, '-vf', filterSDR, result.filePath]);
+      await runFFmpeg([...baseArgs, '-vf', secondary, result.filePath]);
     } catch (e2) {
+      console.warn('Secondary filter failed, trying raw:', e2.message);
       try {
         await runFFmpeg([...baseArgs, result.filePath]);
       } catch (e3) {
