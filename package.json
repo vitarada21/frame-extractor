@@ -1,0 +1,49 @@
+{
+  "name": "frame-extractor",
+  "version": "1.0.0",
+  "description": "Extrakt jakéhokoliv snímku z videa v původní kvalitě",
+  "main": "main.js",
+  "author": "vitarada21",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0"
+  },
+  "devDependencies": {
+    "electron": "^32.2.5",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.vitarada21.frameextractor",
+    "productName": "Frame Extractor",
+    "directories": {
+      "output": "dist-app"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "ffmpeg/**",
+      "node_modules/**"
+    ],
+    "asarUnpack": [
+      "**/node_modules/ffmpeg-static/**"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.video"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

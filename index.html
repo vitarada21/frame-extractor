@@ -13,6 +13,9 @@
 <style>
   * { box-sizing: border-box; }
   button, input, kbd { font-family: inherit; }
+  .electron-only { display: none; }
+  html.electron .electron-only { display: block; }
+  html.electron .web-only { display: none; }
   body {
     margin: 0;
     font-family: "DM Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -311,7 +314,8 @@
   <div id="dropZone" class="drop-zone">
     <p class="desktop-only"><strong>Klikni</strong> pro výběr videa nebo sem soubor přetáhni</p>
     <p class="mobile-only"><strong>Klepni pro výběr videa</strong></p>
-    <p class="small">Podporováno: MP4, WebM, MOV, MKV, AVI a další (záleží na prohlížeči — doporučujeme Chrome nebo Edge)</p>
+    <p class="small web-only">Podporováno: MP4, WebM, MOV, MKV, AVI a další (záleží na prohlížeči — doporučujeme Chrome nebo Edge)</p>
+    <p class="small electron-only">Podporováno: jakýkoliv formát (MP4, MOV, MKV, AVI, HEVC z iPhone, ProRes, …)</p>
     <input type="file" id="fileInput" accept="video/*">
   </div>
 
@@ -373,7 +377,7 @@
 
     <div id="convertBox" class="convert-box">
       <div class="row">
-        <div class="info">
+        <div class="info web-only">
           <strong>Převést video automaticky?</strong><br>
           Stáhne se ~30 MB knihovna a video se převede přímo v prohlížeči (nikam se neposílá). Kvalita zůstane prakticky beze ztráty.
           <br><br>
@@ -381,7 +385,11 @@
           <br><br>
           <span style="color: #92400e;">⚠ Limit pro převod v prohlížeči je 400 MB. Větší soubory převeď přes VLC.</span>
         </div>
-        <button id="btnConvert" class="primary">⚙ Převést tady</button>
+        <div class="info electron-only">
+          <strong>Převést video?</strong><br>
+          Použije se nativní FFmpeg, žádné limity velikosti. Konverze je 5-10× rychlejší než ve webu a podporuje všechny formáty (HEVC, ProRes, AV1, …).
+        </div>
+        <button id="btnConvert" class="primary">⚙ Převést</button>
       </div>
       <div id="progressWrap" class="progress-wrap">
         <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
@@ -490,10 +498,17 @@ if (window.ResizeObserver) {
   new ResizeObserver(updateCropFrame).observe(video);
 }
 
+const IS_ELECTRON = !!window.electronAPI;
+
 let videoName = 'frame';
 let currentBlobUrl = null;
 let originalFile = null;
+let currentPath = null;
 let ffmpegInstance = null;
+
+if (IS_ELECTRON) {
+  document.documentElement.classList.add('electron');
+}
 
 function loadFile(file) {
   if (!file || !file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|mkv|avi|m4v|ogv|ogg)$/i)) {
@@ -504,6 +519,7 @@ function loadFile(file) {
   currentBlobUrl = URL.createObjectURL(file);
   videoName = file.name.replace(/\.[^.]+$/, '');
   originalFile = file;
+  currentPath = IS_ELECTRON ? window.electronAPI.getPathForFile(file) : null;
   video.src = currentBlobUrl;
   dropZone.style.display = 'none';
   player.classList.add('active');
@@ -512,7 +528,32 @@ function loadFile(file) {
   document.getElementById('progressWrap').classList.remove('active');
 }
 
-dropZone.addEventListener('click', () => fileInput.click());
+async function loadFromPath(fileInfo) {
+  if (!fileInfo || !fileInfo.path) return;
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+  videoName = fileInfo.name.replace(/\.[^.]+$/, '');
+  originalFile = null;
+  currentPath = fileInfo.path;
+  const fileUrl = 'file:///' + fileInfo.path.replace(/\\/g, '/');
+  video.src = fileUrl;
+  dropZone.style.display = 'none';
+  player.classList.add('active');
+  document.getElementById('errorBox').classList.remove('active');
+  document.getElementById('convertBox').classList.remove('active');
+  document.getElementById('progressWrap').classList.remove('active');
+}
+
+dropZone.addEventListener('click', async () => {
+  if (IS_ELECTRON) {
+    const fileInfo = await window.electronAPI.openVideoFile();
+    if (fileInfo) loadFromPath(fileInfo);
+  } else {
+    fileInput.click();
+  }
+});
 fileInput.addEventListener('change', e => {
   if (e.target.files[0]) loadFile(e.target.files[0]);
 });
@@ -593,7 +634,42 @@ async function loadFFmpeg() {
 
 const MAX_CONVERT_BYTES = 400 * 1024 * 1024;
 
+async function convertVideoNative() {
+  if (!currentPath) return;
+  btnConvert.disabled = true;
+  progressWrap.classList.add('active');
+  progressFill.style.width = '0%';
+  progressLabel.textContent = 'Spouštím nativní FFmpeg…';
+  const unsubscribe = window.electronAPI.onConvertProgress((progress) => {
+    const pct = Math.min(100, Math.max(0, progress * 100));
+    progressFill.style.width = pct.toFixed(1) + '%';
+    progressLabel.textContent = `Převádím… ${pct.toFixed(0)}%`;
+  });
+  try {
+    const result = await window.electronAPI.convertVideo(currentPath);
+    progressLabel.textContent = 'Hotovo, nahrávám…';
+    if (currentBlobUrl) {
+      URL.revokeObjectURL(currentBlobUrl);
+      currentBlobUrl = null;
+    }
+    currentPath = result.path;
+    video.src = result.url;
+    errorBox.classList.remove('active');
+    convertBox.classList.remove('active');
+    progressWrap.classList.remove('active');
+  } catch (err) {
+    console.error('Native convert error:', err);
+    progressLabel.textContent = 'Chyba: ' + (err.message || 'převod selhal');
+  } finally {
+    btnConvert.disabled = false;
+    if (unsubscribe) unsubscribe();
+  }
+}
+
 async function convertVideo() {
+  if (IS_ELECTRON && currentPath) {
+    return convertVideoNative();
+  }
   if (!originalFile) return;
   if (originalFile.size > MAX_CONVERT_BYTES) {
     const sizeMB = (originalFile.size / (1024 * 1024)).toFixed(0);
@@ -708,24 +784,40 @@ btnReset.addEventListener('click', () => {
   video.load();
   if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
   currentBlobUrl = null;
+  currentPath = null;
+  originalFile = null;
   player.classList.remove('active');
   dropZone.style.display = 'block';
   fileInput.value = '';
 });
 
-function exportFrame() {
+async function exportFrame() {
   if (!video.videoWidth) return;
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const fps = parseFloat(fpsInput.value) || 30;
+  const frameNum = Math.round(video.currentTime * fps);
+  const defaultName = `${videoName}_frame_${String(frameNum).padStart(6, '0')}.png`;
+
+  if (IS_ELECTRON) {
+    const dataUrl = canvas.toDataURL('image/png');
+    try {
+      const saved = await window.electronAPI.saveFrame(dataUrl, defaultName);
+      if (saved) console.log('Saved frame to', saved);
+    } catch (err) {
+      console.error('Save error:', err);
+      alert('Uložení selhalo: ' + (err.message || err));
+    }
+    return;
+  }
+
   canvas.toBlob(blob => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const fps = parseFloat(fpsInput.value) || 30;
-    const frameNum = Math.round(video.currentTime * fps);
     a.href = url;
-    a.download = `${videoName}_frame_${String(frameNum).padStart(6, '0')}.png`;
+    a.download = defaultName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
