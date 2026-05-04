@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   convertVideo: (inputPath) => ipcRenderer.invoke('convert-video', { inputPath }),
   saveFrame: (dataUrl, defaultName) =>
     ipcRenderer.invoke('save-frame', { dataUrl, defaultName }),
+  extractFrame: (inputPath, timeSec, defaultName) =>
+    ipcRenderer.invoke('extract-frame', { inputPath, timeSec, defaultName }),
   showInFolder: (filePath) => ipcRenderer.invoke('show-in-folder', filePath),
   onConvertProgress: (callback) => {
     const listener = (_, progress) => callback(progress);

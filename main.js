@@ -150,6 +150,57 @@ ipcMain.handle('save-frame', async (event, { dataUrl, defaultName }) => {
   return result.filePath;
 });
 
+function runFFmpeg(args) {
+  return new Promise((resolve, reject) => {
+    const ff = spawn(ffmpegPath, args);
+    let stderr = '';
+    ff.stderr.on('data', (d) => {
+      stderr += d.toString();
+      if (stderr.length > 8192) stderr = stderr.slice(-4096);
+    });
+    ff.on('close', (code) => {
+      if (code === 0) resolve(stderr);
+      else reject(new Error(`FFmpeg exit ${code}: ${stderr.slice(-500)}`));
+    });
+    ff.on('error', reject);
+  });
+}
+
+ipcMain.handle('extract-frame', async (event, { inputPath, timeSec, defaultName }) => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Uložit snímek',
+    defaultPath: defaultName,
+    filters: [{ name: 'PNG obrázek', extensions: ['png'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+
+  const t = Math.max(0, timeSec).toFixed(6);
+  const baseArgs = [
+    '-ss', t,
+    '-i', inputPath,
+    '-frames:v', '1',
+    '-y',
+  ];
+
+  const filterHDR = 'zscale=t=linear:npl=100,format=gbrpf32le,tonemap=tonemap=hable:desat=0,zscale=p=bt709:t=bt709:m=bt709:r=tv,format=rgb24';
+  const filterSDR = 'scale=in_color_matrix=auto:out_color_matrix=bt709:flags=full_chroma_int+accurate_rnd,format=rgb24';
+
+  try {
+    await runFFmpeg([...baseArgs, '-vf', filterHDR, result.filePath]);
+  } catch (e1) {
+    try {
+      await runFFmpeg([...baseArgs, '-vf', filterSDR, result.filePath]);
+    } catch (e2) {
+      try {
+        await runFFmpeg([...baseArgs, result.filePath]);
+      } catch (e3) {
+        throw new Error(`Extrakce snímku selhala: ${e3.message}`);
+      }
+    }
+  }
+  return result.filePath;
+});
+
 ipcMain.handle('show-in-folder', (event, filePath) => {
   if (filePath && fs.existsSync(filePath)) {
     shell.showItemInFolder(filePath);

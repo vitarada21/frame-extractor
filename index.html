@@ -503,6 +503,7 @@ const IS_ELECTRON = !!window.electronAPI;
 let videoName = 'frame';
 let currentBlobUrl = null;
 let originalFile = null;
+let originalPath = null;
 let currentPath = null;
 let ffmpegInstance = null;
 
@@ -520,6 +521,7 @@ function loadFile(file) {
   videoName = file.name.replace(/\.[^.]+$/, '');
   originalFile = file;
   currentPath = IS_ELECTRON ? window.electronAPI.getPathForFile(file) : null;
+  originalPath = currentPath;
   video.src = currentBlobUrl;
   dropZone.style.display = 'none';
   player.classList.add('active');
@@ -537,6 +539,7 @@ async function loadFromPath(fileInfo) {
   videoName = fileInfo.name.replace(/\.[^.]+$/, '');
   originalFile = null;
   currentPath = fileInfo.path;
+  originalPath = fileInfo.path;
   const fileUrl = 'file:///' + fileInfo.path.replace(/\\/g, '/');
   video.src = fileUrl;
   dropZone.style.display = 'none';
@@ -785,6 +788,7 @@ btnReset.addEventListener('click', () => {
   if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
   currentBlobUrl = null;
   currentPath = null;
+  originalPath = null;
   originalFile = null;
   player.classList.remove('active');
   dropZone.style.display = 'block';
@@ -793,13 +797,25 @@ btnReset.addEventListener('click', () => {
 
 async function exportFrame() {
   if (!video.videoWidth) return;
+  const fps = parseFloat(fpsInput.value) || 30;
+  const frameNum = Math.round(video.currentTime * fps);
+  const defaultName = `${videoName}_frame_${String(frameNum).padStart(6, '0')}.png`;
+
+  if (IS_ELECTRON && originalPath) {
+    try {
+      const saved = await window.electronAPI.extractFrame(originalPath, video.currentTime, defaultName);
+      if (saved) console.log('Frame extracted to', saved);
+    } catch (err) {
+      console.error('Extract error:', err);
+      alert('Export selhal: ' + (err.message || err));
+    }
+    return;
+  }
+
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const fps = parseFloat(fpsInput.value) || 30;
-  const frameNum = Math.round(video.currentTime * fps);
-  const defaultName = `${videoName}_frame_${String(frameNum).padStart(6, '0')}.png`;
 
   if (IS_ELECTRON) {
     const dataUrl = canvas.toDataURL('image/png');
