@@ -305,6 +305,131 @@
     font-size: 11px;
     color: #444;
   }
+
+  .export-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 1000;
+    padding: 20px;
+    overflow: auto;
+  }
+  .export-modal.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .export-modal-content {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 1100px;
+    width: 100%;
+    max-height: 95vh;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .export-modal-content h3 {
+    margin: 0;
+    font-weight: 500;
+    font-size: 16px;
+  }
+  .export-preview-wrap {
+    position: relative;
+    background: #1a1a1a;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    max-height: 60vh;
+  }
+  #previewImg {
+    max-width: 100%;
+    max-height: 60vh;
+    display: none;
+  }
+  #previewImg.loaded {
+    display: block;
+  }
+  .preview-loading {
+    position: absolute;
+    color: #fff;
+    font-size: 14px;
+    text-align: center;
+  }
+  .export-sliders {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 0 4px;
+  }
+  .slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .slider-row .slider-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #555;
+  }
+  .slider-row .slider-label .val {
+    font-family: monospace;
+    color: #1a1a1a;
+  }
+  .slider-row input[type="range"] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #e0e0e3;
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+  .slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: #2563eb;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .slider-row input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: #2563eb;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
+  .export-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    border-top: 1px solid #eee;
+    padding-top: 16px;
+    flex-wrap: wrap;
+  }
+  .export-actions .left,
+  .export-actions .right {
+    display: flex;
+    gap: 8px;
+  }
+  @media (max-width: 600px) {
+    .export-modal { padding: 0; }
+    .export-modal-content {
+      border-radius: 0;
+      height: 100vh;
+      max-height: 100vh;
+    }
+  }
 </style>
 </head>
 <body>
@@ -400,6 +525,39 @@
 </div>
 
 <canvas id="canvas" style="display:none;"></canvas>
+
+<div id="exportModal" class="export-modal">
+  <div class="export-modal-content">
+    <h3>Náhled exportu</h3>
+    <div class="export-preview-wrap">
+      <img id="previewImg" alt="Náhled snímku">
+      <div id="previewLoading" class="preview-loading">Připravuji náhled…</div>
+    </div>
+    <div class="export-sliders">
+      <div class="slider-row">
+        <div class="slider-label"><span>Sytost</span><span class="val" id="satVal">100%</span></div>
+        <input type="range" id="satSlider" min="0" max="200" value="100" step="1">
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>Kontrast</span><span class="val" id="conVal">100%</span></div>
+        <input type="range" id="conSlider" min="50" max="150" value="100" step="1">
+      </div>
+      <div class="slider-row">
+        <div class="slider-label"><span>Jas</span><span class="val" id="briVal">0</span></div>
+        <input type="range" id="briSlider" min="-50" max="50" value="0" step="1">
+      </div>
+    </div>
+    <div class="export-actions">
+      <div class="left">
+        <button id="resetExportBtn">Resetovat</button>
+      </div>
+      <div class="right">
+        <button id="cancelExportBtn">Zrušit</button>
+        <button id="confirmExportBtn" class="primary">💾 Uložit snímek</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 const dropZone = document.getElementById('dropZone');
@@ -509,6 +667,11 @@ let ffmpegInstance = null;
 
 if (IS_ELECTRON) {
   document.documentElement.classList.add('electron');
+  if (window.electronAPI.onProbeInfo) {
+    window.electronAPI.onProbeInfo((info) => {
+      console.log('[probe]', info);
+    });
+  }
 }
 
 function loadFile(file) {
@@ -795,50 +958,146 @@ btnReset.addEventListener('click', () => {
   fileInput.value = '';
 });
 
+const exportModal = document.getElementById('exportModal');
+const previewImg = document.getElementById('previewImg');
+const previewLoading = document.getElementById('previewLoading');
+const satSlider = document.getElementById('satSlider');
+const conSlider = document.getElementById('conSlider');
+const briSlider = document.getElementById('briSlider');
+const satValEl = document.getElementById('satVal');
+const conValEl = document.getElementById('conVal');
+const briValEl = document.getElementById('briVal');
+const resetExportBtn = document.getElementById('resetExportBtn');
+const cancelExportBtn = document.getElementById('cancelExportBtn');
+const confirmExportBtn = document.getElementById('confirmExportBtn');
+
+let pendingExport = null;
+
+function applyPreviewFilter() {
+  const sat = parseInt(satSlider.value, 10) / 100;
+  const con = parseInt(conSlider.value, 10) / 100;
+  const bri = parseInt(briSlider.value, 10) / 100;
+  satValEl.textContent = `${satSlider.value}%`;
+  conValEl.textContent = `${conSlider.value}%`;
+  briValEl.textContent = (briSlider.value > 0 ? '+' : '') + briSlider.value;
+  previewImg.style.filter = `saturate(${sat}) contrast(${con}) brightness(${1 + bri})`;
+}
+
+[satSlider, conSlider, briSlider].forEach(s => s.addEventListener('input', applyPreviewFilter));
+
+function resetSliders() {
+  satSlider.value = 100;
+  conSlider.value = 100;
+  briSlider.value = 0;
+  applyPreviewFilter();
+}
+
+resetExportBtn.addEventListener('click', resetSliders);
+
+function closeExportModal() {
+  exportModal.classList.remove('active');
+  previewImg.classList.remove('loaded');
+  previewImg.src = '';
+  pendingExport = null;
+  confirmExportBtn.disabled = false;
+  confirmExportBtn.textContent = '💾 Uložit snímek';
+}
+
+cancelExportBtn.addEventListener('click', closeExportModal);
+
+exportModal.addEventListener('click', (e) => {
+  if (e.target === exportModal) closeExportModal();
+});
+
+confirmExportBtn.addEventListener('click', async () => {
+  if (!pendingExport) return;
+  const adjustments = {
+    saturation: parseInt(satSlider.value, 10) / 100,
+    contrast: parseInt(conSlider.value, 10) / 100,
+    brightness: parseInt(briSlider.value, 10) / 100,
+  };
+  confirmExportBtn.disabled = true;
+  confirmExportBtn.textContent = 'Ukládám…';
+
+  try {
+    if (IS_ELECTRON && originalPath) {
+      const saved = await window.electronAPI.extractFrame(
+        originalPath,
+        pendingExport.time,
+        pendingExport.defaultName,
+        adjustments,
+      );
+      if (saved) closeExportModal();
+      else { confirmExportBtn.disabled = false; confirmExportBtn.textContent = '💾 Uložit snímek'; }
+    } else {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = previewImg.naturalWidth;
+      tempCanvas.height = previewImg.naturalHeight;
+      const tctx = tempCanvas.getContext('2d');
+      tctx.filter = previewImg.style.filter;
+      tctx.drawImage(previewImg, 0, 0);
+      tempCanvas.toBlob(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = pendingExport.defaultName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        closeExportModal();
+      }, 'image/png');
+    }
+  } catch (err) {
+    console.error('Export error:', err);
+    alert('Export selhal: ' + (err.message || err));
+    confirmExportBtn.disabled = false;
+    confirmExportBtn.textContent = '💾 Uložit snímek';
+  }
+});
+
 async function exportFrame() {
   if (!video.videoWidth) return;
   const fps = parseFloat(fpsInput.value) || 30;
   const frameNum = Math.round(video.currentTime * fps);
   const defaultName = `${videoName}_frame_${String(frameNum).padStart(6, '0')}.png`;
 
-  if (IS_ELECTRON && originalPath) {
-    try {
-      const saved = await window.electronAPI.extractFrame(originalPath, video.currentTime, defaultName);
-      if (saved) console.log('Frame extracted to', saved);
-    } catch (err) {
-      console.error('Extract error:', err);
-      alert('Export selhal: ' + (err.message || err));
+  pendingExport = {
+    time: video.currentTime,
+    frameNum,
+    defaultName,
+  };
+
+  resetSliders();
+  previewImg.classList.remove('loaded');
+  previewImg.src = '';
+  previewLoading.style.display = 'block';
+  previewLoading.textContent = 'Připravuji náhled…';
+  exportModal.classList.add('active');
+
+  try {
+    let previewUrl;
+    if (IS_ELECTRON && originalPath) {
+      previewUrl = await window.electronAPI.extractFramePreview(originalPath, video.currentTime);
+    } else {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      previewUrl = canvas.toDataURL('image/png');
     }
-    return;
+    previewImg.onload = () => {
+      previewImg.classList.add('loaded');
+      previewLoading.style.display = 'none';
+    };
+    previewImg.onerror = () => {
+      previewLoading.textContent = 'Náhled se nepodařilo načíst.';
+    };
+    previewImg.src = previewUrl;
+  } catch (err) {
+    console.error('Preview error:', err);
+    previewLoading.textContent = 'Chyba: ' + (err.message || err);
   }
-
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-  if (IS_ELECTRON) {
-    const dataUrl = canvas.toDataURL('image/png');
-    try {
-      const saved = await window.electronAPI.saveFrame(dataUrl, defaultName);
-      if (saved) console.log('Saved frame to', saved);
-    } catch (err) {
-      console.error('Save error:', err);
-      alert('Uložení selhalo: ' + (err.message || err));
-    }
-    return;
-  }
-
-  canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = defaultName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, 'image/png');
 }
 
 document.addEventListener('keydown', e => {

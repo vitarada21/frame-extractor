@@ -181,7 +181,56 @@ function probeVideoIsHDR(inputPath) {
   });
 }
 
-ipcMain.handle('extract-frame', async (event, { inputPath, timeSec, defaultName }) => {
+function buildFilterChain(isHDR, eq) {
+  const baseHDR = 'zscale=t=bt709:m=bt709:p=bt709:r=tv,format=rgb24';
+  const baseSDR = 'scale=in_color_matrix=auto:out_color_matrix=bt709:flags=full_chroma_int+accurate_rnd,format=rgb24';
+  const base = isHDR ? baseHDR : baseSDR;
+  return eq ? `${base},${eq}` : base;
+}
+
+function adjustmentsToEq(adj) {
+  if (!adj) return null;
+  const sat = typeof adj.saturation === 'number' ? adj.saturation : 1;
+  const con = typeof adj.contrast === 'number' ? adj.contrast : 1;
+  const bri = typeof adj.brightness === 'number' ? adj.brightness : 0;
+  if (sat === 1 && con === 1 && bri === 0) return null;
+  return `eq=saturation=${sat}:contrast=${con}:brightness=${bri}`;
+}
+
+async function extractFrameWithFilter(inputPath, timeSec, outputPath, adjustments) {
+  const probe = await probeVideoIsHDR(inputPath);
+  const probeInfo = { isHDR: probe.isHDR, hlg: probe.hlg, pq: probe.pq, bt2020: probe.bt2020 };
+  console.log('[probe]', probeInfo);
+  if (mainWindow) mainWindow.webContents.send('probe-info', probeInfo);
+
+  const eq = adjustmentsToEq(adjustments);
+  const t = Math.max(0, timeSec).toFixed(6);
+  const baseArgs = ['-ss', t, '-i', inputPath, '-frames:v', '1', '-y'];
+
+  const primary = buildFilterChain(probe.isHDR, eq);
+  const secondary = buildFilterChain(!probe.isHDR, eq);
+
+  try {
+    await runFFmpeg([...baseArgs, '-vf', primary, outputPath]);
+  } catch (e1) {
+    console.warn('Primary filter failed, trying secondary:', e1.message);
+    try {
+      await runFFmpeg([...baseArgs, '-vf', secondary, outputPath]);
+    } catch (e2) {
+      console.warn('Secondary filter failed, trying raw:', e2.message);
+      await runFFmpeg([...baseArgs, outputPath]);
+    }
+  }
+}
+
+ipcMain.handle('extract-frame-preview', async (event, { inputPath, timeSec }) => {
+  const tempPath = path.join(os.tmpdir(), `frame_preview_${Date.now()}.png`);
+  tempFiles.add(tempPath);
+  await extractFrameWithFilter(inputPath, timeSec, tempPath, null);
+  return 'file:///' + tempPath.replace(/\\/g, '/');
+});
+
+ipcMain.handle('extract-frame', async (event, { inputPath, timeSec, defaultName, adjustments }) => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: 'Uložit snímek',
     defaultPath: defaultName,
@@ -189,39 +238,10 @@ ipcMain.handle('extract-frame', async (event, { inputPath, timeSec, defaultName 
   });
   if (result.canceled || !result.filePath) return null;
 
-  const t = Math.max(0, timeSec).toFixed(6);
-  const baseArgs = [
-    '-ss', t,
-    '-i', inputPath,
-    '-frames:v', '1',
-    '-y',
-  ];
-
-  const probe = await probeVideoIsHDR(inputPath);
-  const probeInfo = { isHDR: probe.isHDR, hlg: probe.hlg, pq: probe.pq, bt2020: probe.bt2020 };
-  console.log('[probe]', probeInfo);
-  if (mainWindow) mainWindow.webContents.send('probe-info', probeInfo);
-
-  const filterHDR = 'zscale=t=bt709:m=bt709:p=bt709:r=tv,format=rgb24,eq=saturation=1.15:contrast=1.10:gamma=0.95';
-  const filterSDR = 'scale=in_color_matrix=auto:out_color_matrix=bt709:flags=full_chroma_int+accurate_rnd,format=rgb24';
-
-  const primary = probe.isHDR ? filterHDR : filterSDR;
-  const secondary = probe.isHDR ? filterSDR : filterHDR;
-
   try {
-    await runFFmpeg([...baseArgs, '-vf', primary, result.filePath]);
-  } catch (e1) {
-    console.warn('Primary filter failed, trying secondary:', e1.message);
-    try {
-      await runFFmpeg([...baseArgs, '-vf', secondary, result.filePath]);
-    } catch (e2) {
-      console.warn('Secondary filter failed, trying raw:', e2.message);
-      try {
-        await runFFmpeg([...baseArgs, result.filePath]);
-      } catch (e3) {
-        throw new Error(`Extrakce snímku selhala: ${e3.message}`);
-      }
-    }
+    await extractFrameWithFilter(inputPath, timeSec, result.filePath, adjustments);
+  } catch (err) {
+    throw new Error(`Extrakce snímku selhala: ${err.message}`);
   }
   return result.filePath;
 });
